@@ -64,6 +64,7 @@ Paths below reflect **what exists in the repo**. Entries from `architecture.xlsx
 | [`src/app/teacher/quizzes/`](../src/app/teacher/quizzes/) | Page | Quiz list | Export entry points toward `GET /api/export`. |
 | [`src/app/teacher/quizzes/[quizId]/`](../src/app/teacher/quizzes/[quizId]/) | Page | Quiz detail / delete | |
 | [`src/app/student/take/[quizId]/`](../src/app/student/take/[quizId]/) | Page | Take quiz | [`quiz_runner.tsx`](../src/app/student/take/[quizId]/quiz_runner.tsx), [`use_quiz_timer.ts`](../src/app/student/take/[quizId]/use_quiz_timer.ts), [`use_quiz_submission.ts`](../src/app/student/take/[quizId]/use_quiz_submission.ts). |
+| [`src/app/student/practice/create/`](../src/app/student/practice/create/) | Page | Student self-practice | Reuses [`CreateQuizWizard`](../src/components/quiz/create_quiz_wizard.tsx); generated quizzes are `PRIVATE` to the student. |
 | [`src/app/student/results/[attemptId]/`](../src/app/student/results/[attemptId]/) | Page | Attempt results | **Repo:** dynamic segment is **`attemptId`**, not `[quizId]` (xlsx typo). |
 | [`src/app/api/upload/route.ts`](../src/app/api/upload/route.ts) | API | Multipart upload → extract text → `uploaded_files` | |
 | [`src/app/api/generate/route.ts`](../src/app/api/generate/route.ts) | API | Create quiz from `fileId` + config | Uses [`parseGenerateBody`](../src/lib/api/request_validation.ts). |
@@ -143,7 +144,7 @@ Authoritative schema: [`src/lib/db/schema.ts`](../src/lib/db/schema.ts). Concept
 | Concept | Drizzle / notes |
 |---------|-----------------|
 | User | `users` (+ Better Auth `sessions`, `accounts`, `verifications`) |
-| Quiz | `quizzes` — `quizType`, `difficulty`, optional `timeLimitMinutes` |
+| Quiz | `quizzes` — `quizType`, `difficulty`, optional `timeLimitMinutes`, `visibility` (`SHARED` \| `PRIVATE`) |
 | Question | `questions` — JSON `options` for MC; `correctAnswer`, `hasLatex`, `orderIndex` |
 | Attempt | `attempts` — `score`, `submittedAt` |
 | Answer | `answers` — per-question correctness |
@@ -167,12 +168,12 @@ Authoritative schema: [`src/lib/db/schema.ts`](../src/lib/db/schema.ts). Concept
 
 | Step | Location | Notes |
 |------|----------|--------|
-| 1. Upload | [`POST /api/upload`](../src/app/api/upload/route.ts) | `parseUploadForm`; `extractTextFromFile`. |
+| 1. Upload | [`POST /api/upload`](../src/app/api/upload/route.ts) | Session required; `owner_id` from session; `parseUploadForm` (file only); per-user rate limit; `extractTextFromFile`. |
 | 2. Type / size gates | [`file_service.ts`](../src/services/file_service.ts) | MIME whitelist, 10 MB cap. |
 | 3. Parse | [`parsers/`](../src/lib/parsers/) | PDF / PPT / TXT. |
 | 4. Min length | `file_service` | `InsufficientContentError` if &lt; 100 chars. |
 | 5. Persist text | `uploaded_files.extractedText` | Used later by generate. |
-| 6. Generate | [`ai_service`](../src/services/ai_service.ts) + [`quiz_service.createQuiz`](../src/services/quiz_service.ts) | Inserts quiz + questions. |
+| 6. Generate | [`POST /api/generate`](../src/app/api/generate/route.ts) + [`ai_service`](../src/services/ai_service.ts) + [`quiz_service.createQuiz`](../src/services/quiz_service.ts) | Session required; `uploaded_files` row must belong to caller; teachers get `SHARED` quizzes, students `PRIVATE`; per-user rate limit; inserts quiz + questions. |
 
 ---
 
@@ -189,10 +190,10 @@ Authoritative schema: [`src/lib/db/schema.ts`](../src/lib/db/schema.ts). Concept
 
 | Method + path | Request | Response |
 |---------------|---------|----------|
-| `POST /api/upload` | `multipart/form-data`: `file`, `ownerId` | `{ fileId, extractedText }` |
-| `POST /api/generate` | JSON: `fileId`, `title`, `ownerId`, `config` | `{ quiz }` |
-| `POST /api/attempts` | JSON: `quizId`, `studentId`, `responses[]` | `{ attemptId, score }` |
-| `GET /api/export?quizId=` | query | `application/pdf` |
+| `POST /api/upload` | `multipart/form-data`: `file` (session sets owner) | `{ fileId, extractedText }` |
+| `POST /api/generate` | JSON: `fileId`, `title`, `config` | `{ quiz }` (owner + `visibility` from session / role) |
+| `POST /api/attempts` | JSON: `quizId`, `studentId`, `responses[]` | Session required; `studentId` must match session; quiz must be `SHARED` or `PRIVATE` owned by caller. `{ attemptId, score }` |
+| `GET /api/export?quizId=` | query | Session required; `SHARED` or own `PRIVATE`. `application/pdf` |
 | `/api/auth/*` | Better Auth | per library |
 
 ---

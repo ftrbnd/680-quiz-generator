@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseGenerateBody } from "@/lib/api/request_validation";
-import { createQuiz, getUploadedFileText } from "@/services/quiz_service";
+import { checkSlidingWindowLimit } from "@/lib/api/rate_limit";
+import { auth } from "@/lib/auth/auth";
+import { createQuiz, getUploadedFileTextForOwner } from "@/services/quiz_service";
 import { GenerationFailedError, QuotaExceededError } from "@/services/ai_service";
+
+const GENERATE_WINDOW_MS = 60 * 60 * 1000;
+const GENERATE_MAX_PER_WINDOW = 30;
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await auth.api.getSession({ headers: req.headers });
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: true, code: "UNAUTHORIZED", message: "Sign in required" }, { status: 401 });
+    }
+    const ownerId = session.user.id;
+    const role = (session.user as { role?: string }).role ?? "STUDENT";
+    const visibility = role === "TEACHER" ? ("SHARED" as const) : ("PRIVATE" as const);
+
     const body = await req.json();
     const parsed = parseGenerateBody(body);
     if (!parsed.ok) {
@@ -13,14 +26,29 @@ export async function POST(req: NextRequest) {
         { status: parsed.status }
       );
     }
-    const { fileId, title, ownerId, config } = parsed;
+    const { fileId, title, config } = parsed;
 
-    const extractedText = await getUploadedFileText({ fileId });
-    if (!extractedText) {
-      return NextResponse.json({ error: true, code: "INSUFFICIENT_CONTENT", message: "No extracted text for this file" }, { status: 422 });
+    const rl = checkSlidingWindowLimit({
+      key: `generate:${ownerId}`,
+      max: GENERATE_MAX_PER_WINDOW,
+      windowMs: GENERATE_WINDOW_MS,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: true, code: "RATE_LIMITED", message: "Too many quiz generations. Try again later." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
+      );
     }
 
-    const quiz = await createQuiz({ title, ownerId, extractedText, config });
+    const extractedText = await getUploadedFileTextForOwner({ fileId, ownerId });
+    if (!extractedText) {
+      return NextResponse.json(
+        { error: true, code: "FILE_NOT_FOUND", message: "Upload not found or you do not have access" },
+        { status: 404 }
+      );
+    }
+
+    const quiz = await createQuiz({ title, ownerId, extractedText, config, visibility });
     return NextResponse.json({ quiz });
   } catch (err) {
     if (err instanceof QuotaExceededError) {

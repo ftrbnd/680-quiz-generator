@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth/auth";
 import { db } from "@/lib/db/drizzle_client";
 import { quizzes, questions } from "@/lib/db/schema";
-import { eq, count } from "drizzle-orm";
+import { and, count, eq, or } from "drizzle-orm";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -19,18 +21,37 @@ const TYPE_LABEL = {
 } as const;
 
 export default async function StudentHomePage() {
+  const session = await auth.api.getSession({ headers: await headers() });
+  const userId = session?.user?.id ?? "";
+
+  const visibilityFilter = or(
+    eq(quizzes.visibility, "SHARED"),
+    and(eq(quizzes.visibility, "PRIVATE"), eq(quizzes.ownerId, userId))
+  );
+
   const rows = await db
     .select({ quiz: quizzes, questionCount: count(questions.id) })
     .from(quizzes)
     .leftJoin(questions, eq(questions.quizId, quizzes.id))
+    .where(visibilityFilter)
     .groupBy(quizzes.id)
     .orderBy(quizzes.createdAt);
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold">Available Quizzes</h1>
-        <p className="text-muted-foreground text-sm mt-1">{rows.length} quiz{rows.length !== 1 ? "zes" : ""} available</p>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Available Quizzes</h1>
+          <p className="text-muted-foreground text-sm mt-1">{rows.length} quiz{rows.length !== 1 ? "zes" : ""} available</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="default" size="sm" render={<Link href="/student/practice/create" />}>
+            Practice from my notes
+          </Button>
+          <Button variant="outline" size="sm" render={<Link href="/student/attempts" />}>
+            My attempts and stats →
+          </Button>
+        </div>
       </div>
 
       {rows.length === 0 ? (

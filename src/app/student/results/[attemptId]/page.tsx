@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth/auth";
 import { db } from "@/lib/db/drizzle_client";
 import { attempts, answers, questions, quizzes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -13,8 +15,12 @@ import type { QuestionOption } from "@/types/quiz";
 export default async function ResultsPage({ params }: { params: Promise<{ attemptId: string }> }) {
   const { attemptId } = await params;
 
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user?.id) notFound();
+
   const [attempt] = await db.select().from(attempts).where(eq(attempts.id, attemptId));
   if (!attempt) notFound();
+  if (attempt.studentId !== session.user.id) notFound();
 
   const [quiz] = await db.select().from(quizzes).where(eq(quizzes.id, attempt.quizId));
   const attemptAnswers = await db.select().from(answers).where(eq(answers.attemptId, attemptId));
@@ -124,8 +130,9 @@ export default async function ResultsPage({ params }: { params: Promise<{ attemp
         })}
       </div>
 
-      <div className="flex gap-3 pb-8">
+      <div className="flex flex-wrap gap-3 pb-8">
         <Button variant="outline" render={<Link href="/student" />}>← Back to Quizzes</Button>
+        <Button variant="outline" render={<Link href="/student/attempts" />}>My attempts</Button>
         <Button render={<Link href={`/student/take/${attempt.quizId}`} />}>Retake Quiz</Button>
       </div>
     </div>

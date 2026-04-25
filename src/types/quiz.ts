@@ -6,6 +6,8 @@ export type QuizType =
 
 export type Difficulty = "EASY" | "MEDIUM" | "HARD";
 
+export type QuizVisibility = "SHARED" | "PRIVATE";
+
 export interface QuizConfig {
   questionCount: number;
   quizType: QuizType;
@@ -32,6 +34,7 @@ export interface Quiz {
   id: string;
   title: string;
   ownerId: string;
+  visibility: QuizVisibility;
   quizType: QuizType;
   difficulty: Difficulty;
   timeLimitMinutes?: number;

@@ -24,7 +24,6 @@ export type ParseGenerateOk = {
   ok: true;
   fileId: string;
   title: string;
-  ownerId: string;
   config: QuizConfig;
 };
 
@@ -35,16 +34,12 @@ export function parseGenerateBody(input: unknown): ParseGenerateOk | ApiValidati
   const o = input as Record<string, unknown>;
   const fileId = o.fileId;
   const title = o.title;
-  const ownerId = o.ownerId;
   const rawConfig = o.config;
 
   if (typeof fileId !== "string" || !fileId.trim()) {
     return { ok: false, status: 400, code: "INVALID_REQUEST", message: "Missing required fields" };
   }
   if (typeof title !== "string" || !title.trim()) {
-    return { ok: false, status: 400, code: "INVALID_REQUEST", message: "Missing required fields" };
-  }
-  if (typeof ownerId !== "string" || !ownerId.trim()) {
     return { ok: false, status: 400, code: "INVALID_REQUEST", message: "Missing required fields" };
   }
 
@@ -57,25 +52,20 @@ export function parseGenerateBody(input: unknown): ParseGenerateOk | ApiValidati
     ok: true,
     fileId,
     title,
-    ownerId,
     config: parsed.data,
   };
 }
 
-export type ParseUploadOk = { ok: true; file: File; ownerId: string };
+export type ParseUploadOk = { ok: true; file: File };
 
 export function parseUploadForm(form: FormData): ParseUploadOk | ApiValidationError {
   const file = form.get("file");
-  const ownerId = form.get("ownerId");
 
   if (!(file instanceof File) || !file.size) {
-    return { ok: false, status: 400, code: "INVALID_REQUEST", message: "Missing file or ownerId" };
-  }
-  if (typeof ownerId !== "string" || !ownerId.trim()) {
-    return { ok: false, status: 400, code: "INVALID_REQUEST", message: "Missing file or ownerId" };
+    return { ok: false, status: 400, code: "INVALID_REQUEST", message: "Missing file" };
   }
 
-  return { ok: true, file, ownerId };
+  return { ok: true, file };
 }
 
 export type ParseAttemptsOk = {

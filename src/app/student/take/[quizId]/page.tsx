@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth/auth";
 import { db } from "@/lib/db/drizzle_client";
 import { quizzes, questions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -8,8 +10,12 @@ import type { QuizQuestion, QuestionOption } from "@/types/quiz";
 export default async function TakeQuizPage({ params }: { params: Promise<{ quizId: string }> }) {
   const { quizId } = await params;
 
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user?.id) notFound();
+
   const [quiz] = await db.select().from(quizzes).where(eq(quizzes.id, quizId));
   if (!quiz) notFound();
+  if (quiz.visibility === "PRIVATE" && quiz.ownerId !== session.user.id) notFound();
 
   const quizQuestions = await db
     .select()

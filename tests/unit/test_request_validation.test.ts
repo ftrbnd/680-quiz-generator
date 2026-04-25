@@ -11,7 +11,6 @@ describe("parseGenerateBody", () => {
   const valid = {
     fileId: "f1",
     title: "T",
-    ownerId: "u1",
     config: {
       questionCount: 5,
       quizType: "MULTIPLE_CHOICE",
@@ -40,14 +39,12 @@ describe("parseGenerateBody", () => {
 });
 
 describe("parseUploadForm", () => {
-  it("accepts_file_and_ownerId", () => {
+  it("accepts_file_only", () => {
     const form = new FormData();
     form.set("file", new File([Buffer.from("x")], "a.txt", { type: "text/plain" }));
-    form.set("ownerId", "user-1");
     const r = parseUploadForm(form);
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.ownerId).toBe("user-1");
       expect(r.file.name).toBe("a.txt");
     }
   });

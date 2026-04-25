@@ -9,6 +9,7 @@ describe("exportQuizPdf", () => {
       id: "quiz-1",
       title: "Sample Quiz",
       ownerId: "owner-1",
+      visibility: "SHARED",
       quizType: "SHORT_ANSWER",
       difficulty: "MEDIUM",
       createdAt: new Date("2025-01-01T00:00:00.000Z"),

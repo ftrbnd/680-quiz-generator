@@ -8,6 +8,7 @@ export const quizTypeEnum = pgEnum("quiz_type", [
   "READING_COMPREHENSION",
 ]);
 export const difficultyEnum = pgEnum("difficulty", ["EASY", "MEDIUM", "HARD"]);
+export const quizVisibilityEnum = pgEnum("quiz_visibility", ["SHARED", "PRIVATE"]);
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -63,6 +64,7 @@ export const quizzes = pgTable("quizzes", {
   quizType: quizTypeEnum("quiz_type").notNull(),
   difficulty: difficultyEnum("difficulty").notNull(),
   timeLimitMinutes: integer("time_limit_minutes"),
+  visibility: quizVisibilityEnum("visibility").notNull().default("SHARED"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

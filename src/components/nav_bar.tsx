@@ -27,7 +27,11 @@ export function NavBar({ userName, role }: NavBarProps) {
     { href: "/teacher/quizzes", label: "My Quizzes" },
     { href: "/teacher/create", label: "Create Quiz" },
   ];
-  const studentLinks = [{ href: "/student", label: "Available Quizzes" }];
+  const studentLinks = [
+    { href: "/student", label: "Available Quizzes" },
+    { href: "/student/practice/create", label: "Practice from notes" },
+    { href: "/student/attempts", label: "My attempts" },
+  ];
   const links = role === "TEACHER" ? teacherLinks : studentLinks;
 
   async function handleSignOut() {

@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseUploadForm } from "@/lib/api/request_validation";
+import { checkSlidingWindowLimit } from "@/lib/api/rate_limit";
+import { auth } from "@/lib/auth/auth";
 import { db } from "@/lib/db/drizzle_client";
 import { uploadedFiles } from "@/lib/db/schema";
 import { generateId } from "@/lib/utils/generate_id";
 import { extractTextFromFile, InvalidFileTypeError, FileTooLargeError, InsufficientContentError } from "@/services/file_service";
 
+const UPLOAD_WINDOW_MS = 60 * 60 * 1000;
+const UPLOAD_MAX_PER_WINDOW = 40;
+
 export async function POST(req: NextRequest) {
   try {
+    const session = await auth.api.getSession({ headers: req.headers });
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: true, code: "UNAUTHORIZED", message: "Sign in required" }, { status: 401 });
+    }
+    const ownerId = session.user.id;
+
     const form = await req.formData();
     const parsed = parseUploadForm(form);
     if (!parsed.ok) {
@@ -15,7 +26,19 @@ export async function POST(req: NextRequest) {
         { status: parsed.status }
       );
     }
-    const { file, ownerId } = parsed;
+    const { file } = parsed;
+
+    const rl = checkSlidingWindowLimit({
+      key: `upload:${ownerId}`,
+      max: UPLOAD_MAX_PER_WINDOW,
+      windowMs: UPLOAD_WINDOW_MS,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: true, code: "RATE_LIMITED", message: "Too many uploads. Try again later." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
+      );
+    }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const extractedText = await extractTextFromFile({ buffer, mimeType: file.type, filename: file.name });
