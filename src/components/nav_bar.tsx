@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { useTheme } from "next-themes";
+import { Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth/auth_client";
 import { Button } from "@/components/ui/button";
@@ -68,24 +71,59 @@ export function NavBar({ userName, role }: NavBarProps) {
           </nav>
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <Avatar className="h-8 w-8 cursor-pointer">
-              <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-            </Avatar>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <div className="px-2 py-1.5 text-sm">
-              <p className="font-medium truncate">{userName}</p>
-              <p className="text-xs text-muted-foreground capitalize">{role.toLowerCase()}</p>
-            </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleSignOut} className="text-destructive cursor-pointer">
-              Sign out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-1 shrink-0">
+          <ThemeToggle />
+          <DropdownMenu>
+            <DropdownMenuTrigger className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Avatar className="h-8 w-8 cursor-pointer">
+                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+              </Avatar>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <div className="px-2 py-1.5 text-sm">
+                <p className="font-medium truncate">{userName}</p>
+                <p className="text-xs text-muted-foreground capitalize">{role.toLowerCase()}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSignOut} className="text-destructive cursor-pointer">
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </header>
+  );
+}
+
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <Button type="button" variant="ghost" size="icon" className="size-8" disabled aria-hidden>
+        <Moon className="size-4 opacity-0" />
+      </Button>
+    );
+  }
+
+  const isDark = resolvedTheme === "dark";
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="size-8"
+      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+    >
+      {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+    </Button>
   );
 }
