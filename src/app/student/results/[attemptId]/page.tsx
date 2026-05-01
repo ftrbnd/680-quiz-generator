@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { CreateFlashcardsButton } from "@/components/quiz/create_flashcards_button";
 import type { QuestionOption } from "@/types/quiz";
 
 export default async function ResultsPage({ params }: { params: Promise<{ attemptId: string }> }) {
@@ -134,6 +135,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ attemp
         <Button variant="outline" render={<Link href="/student" />}>← Back to Quizzes</Button>
         <Button variant="outline" render={<Link href="/student/attempts" />}>My attempts</Button>
         <Button render={<Link href={`/student/take/${attempt.quizId}`} />}>Retake Quiz</Button>
+        <CreateFlashcardsButton quizId={attempt.quizId} attemptId={attemptId} />
       </div>
     </div>
   );
