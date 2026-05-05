@@ -1,6 +1,6 @@
 import { db } from "@/lib/db/drizzle_client";
 import { quizzes, questions, attempts, answers, uploadedFiles } from "@/lib/db/schema";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { buildAttemptFeedback, gradeResponses } from "@/lib/quiz/grade_responses";
 import { generateQuestions } from "@/services/ai_service";
 import { generateId } from "@/lib/utils/generate_id";
@@ -242,4 +242,23 @@ export async function listStudentAttemptsWithStats({
   };
 
   return { rows, stats };
+}
+
+/** Most recent submitted attempt per quiz (for linking flashcards from the student home list). */
+export async function mapLatestSubmittedAttemptIdByQuizForStudent({
+  studentId,
+}: {
+  studentId: string;
+}): Promise<Map<string, string>> {
+  const rows = await db
+    .select({ quizId: attempts.quizId, attemptId: attempts.id })
+    .from(attempts)
+    .where(and(eq(attempts.studentId, studentId), isNotNull(attempts.submittedAt)))
+    .orderBy(desc(attempts.submittedAt));
+
+  const byQuiz = new Map<string, string>();
+  for (const r of rows) {
+    if (!byQuiz.has(r.quizId)) byQuiz.set(r.quizId, r.attemptId);
+  }
+  return byQuiz;
 }

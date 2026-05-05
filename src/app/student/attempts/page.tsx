@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/auth";
 import { listStudentAttemptsWithStats } from "@/services/quiz_service";
 import { Button } from "@/components/ui/button";
+import { CreateFlashcardsButton } from "@/components/quiz/create_flashcards_button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -128,11 +129,19 @@ export default async function StudentAttemptsPage() {
                         ) : (
                           <span className="text-sm text-muted-foreground">No score</span>
                         )}
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           {row.submittedAt && (
-                            <Button size="sm" variant="secondary" render={<Link href={`/student/results/${row.attemptId}`} />}>
-                              Review
-                            </Button>
+                            <>
+                              <Button size="sm" variant="secondary" render={<Link href={`/student/results/${row.attemptId}`} />}>
+                                Review
+                              </Button>
+                              <CreateFlashcardsButton
+                                quizId={row.quizId}
+                                attemptId={row.attemptId}
+                                size="sm"
+                                variant="outline"
+                              />
+                            </>
                           )}
                           <Button size="sm" variant="outline" render={<Link href={`/student/take/${row.quizId}`} />}>
                             Retake

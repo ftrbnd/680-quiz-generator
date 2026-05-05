@@ -6,6 +6,8 @@ import { quizzes, questions } from "@/lib/db/schema";
 import { and, count, eq, or } from "drizzle-orm";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CreateFlashcardsButton } from "@/components/quiz/create_flashcards_button";
+import { mapLatestSubmittedAttemptIdByQuizForStudent } from "@/services/quiz_service";
 
 const DIFFICULTY_COLOR = {
   EASY: "bg-green-100 text-green-800",
@@ -37,6 +39,9 @@ export default async function StudentHomePage() {
     .groupBy(quizzes.id)
     .orderBy(quizzes.createdAt);
 
+  const latestSubmittedByQuiz =
+    userId !== "" ? await mapLatestSubmittedAttemptIdByQuizForStudent({ studentId: userId }) : new Map<string, string>();
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -60,28 +65,39 @@ export default async function StudentHomePage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {rows.map(({ quiz, questionCount }) => (
-            <Card key={quiz.id} className="flex flex-col">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-base leading-snug">{quiz.title}</CardTitle>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${DIFFICULTY_COLOR[quiz.difficulty]}`}>
-                    {quiz.difficulty.toLowerCase()}
-                  </span>
-                </div>
-                <CardDescription className="text-xs">
-                  {TYPE_LABEL[quiz.quizType]} · {questionCount} question{questionCount !== 1 ? "s" : ""}
-                  {quiz.timeLimitMinutes ? ` · ${quiz.timeLimitMinutes} min` : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1" />
-              <CardFooter>
-                <Button className="w-full" render={<Link href={`/student/take/${quiz.id}`} />}>
-                  Start Quiz →
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
+          {rows.map(({ quiz, questionCount }) => {
+            const flashcardsAttemptId = latestSubmittedByQuiz.get(quiz.id);
+            return (
+              <Card key={quiz.id} className="flex flex-col">
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-base leading-snug">{quiz.title}</CardTitle>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${DIFFICULTY_COLOR[quiz.difficulty]}`}>
+                      {quiz.difficulty.toLowerCase()}
+                    </span>
+                  </div>
+                  <CardDescription className="text-xs">
+                    {TYPE_LABEL[quiz.quizType]} · {questionCount} question{questionCount !== 1 ? "s" : ""}
+                    {quiz.timeLimitMinutes ? ` · ${quiz.timeLimitMinutes} min` : ""}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1" />
+                <CardFooter className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                  <Button className="w-full sm:flex-1" render={<Link href={`/student/take/${quiz.id}`} />}>
+                    Start Quiz →
+                  </Button>
+                  {flashcardsAttemptId ? (
+                    <CreateFlashcardsButton
+                      quizId={quiz.id}
+                      attemptId={flashcardsAttemptId}
+                      variant="outline"
+                      className="w-full sm:flex-1"
+                    />
+                  ) : null}
+                </CardFooter>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
