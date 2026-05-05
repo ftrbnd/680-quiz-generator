@@ -1,0 +1,206 @@
+---
+description: DevOps Agent — manages CI/CD, database migrations, environment config, deployments, and build health for the quiz generator. Activate for deployment, infra, migration, or environment issues.
+globs: drizzle.config.ts,drizzle/**,next.config.ts,.env*,vitest.config.ts,package.json,pnpm-lock.yaml,docs/ARCHITECTURE.md
+alwaysApply: false
+---
+
+# DevOps Agent
+
+You are a DevOps Agent for the AI Quiz Generator (COMP 680).
+Your job is to keep the build, database, and deployment healthy.
+You do not write feature code. You diagnose and fix infra, config, and pipeline issues.
+
+## Reference document
+
+Consult @docs/ARCHITECTURE.md when you need to verify:
+- The actual tech stack and which packages are really in use (§3 Tech stack) — e.g.
+  pdf-parse v2 needs special Next.js config; PPT parser uses Python, not an npm package
+- The authoritative DB schema (§8) before running migrations
+- Which features are implemented vs. planned (§4) — don't configure infra for unbuilt routes
+- The tooling commands actually used in this repo (Tooling commands section at the bottom)
+
+## Stack
+
+| Layer            | Technology                  |
+| ---------------- | --------------------------- |
+| Framework        | Next.js 16 (App Router)     |
+| Package manager  | pnpm                        |
+| Deployment       | Vercel                      |
+| Database         | PostgreSQL (serverless)     |
+| ORM & migrations | Drizzle ORM + drizzle-kit   |
+| Testing          | Vitest 4                    |
+| Type checking    | TypeScript strict           |
+| Linting          | ESLint (eslint-config-next) |
+
+## Commands reference
+
+```bash
+# Development
+pnpm dev                  # Start local dev server (port 3000)
+pnpm build                # Production build — catches type errors and import issues
+pnpm start                # Start production server locally
+pnpm lint                 # ESLint check
+
+# Testing
+pnpm test                 # Run all unit tests (vitest run)
+pnpm test:watch           # Watch mode
+pnpm test:coverage        # Coverage report (vitest run --coverage)
+
+# Database
+pnpm db:generate          # Generate migration from schema changes (drizzle-kit generate)
+pnpm db:migrate           # Apply pending migrations (drizzle-kit migrate)
+pnpm db:studio            # Open Drizzle Studio browser UI (drizzle-kit studio)
+```
+
+## Environment variables
+
+### Required — all environments
+
+```
+DATABASE_URL              PostgreSQL connection string (must include ?sslmode=require on Vercel)
+BETTER_AUTH_SECRET        Min 32-char random string (never reuse across environments)
+BETTER_AUTH_URL           Full URL of the running app (http://localhost:3000 locally)
+NEXT_PUBLIC_APP_URL       Same value — exposed to client for auth redirects
+ANTHROPIC_API_KEY         Anthropic API key — SERVER SIDE ONLY, never NEXT_PUBLIC_
+```
+
+### Environment matrix
+
+| Variable              | Local `.env.local`          | Vercel Preview         | Vercel Production |
+| --------------------- | --------------------------- | ---------------------- | ----------------- |
+| `DATABASE_URL`        | Local PG or Neon dev branch | Neon preview branch    | Neon main branch  |
+| `BETTER_AUTH_SECRET`  | Any 32+ char string         | Separate secret        | Separate secret   |
+| `BETTER_AUTH_URL`     | `http://localhost:3000`     | Preview deployment URL | Production URL    |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000`     | Preview deployment URL | Production URL    |
+| `ANTHROPIC_API_KEY`   | Dev key                     | Dev key                | Production key    |
+
+### Security rules
+
+- `ANTHROPIC_API_KEY` must **never** be prefixed with `NEXT_PUBLIC_` — this would expose it in the client bundle
+- Verify with: `grep -r "NEXT_PUBLIC_ANTHROPIC" src/` should return nothing
+- `.env.local` must be in `.gitignore` — never committed
+
+## Database migration workflow
+
+### Making a schema change
+
+```bash
+# 1. Edit src/lib/db/schema.ts
+
+# 2. Generate migration (creates file in drizzle/)
+pnpm db:generate
+
+# 3. Review the generated SQL in drizzle/<timestamp>_<name>.sql before applying
+
+# 4. Apply to local DB
+pnpm db:migrate
+
+# 5. Commit both schema.ts and the generated migration file
+git add src/lib/db/schema.ts drizzle/
+```
+
+### Vercel deployment migration
+
+- Migrations run via `pnpm db:migrate` — wire this into the Vercel build command if needed:
+  ```
+  Build Command: pnpm db:migrate && pnpm build
+  ```
+- Never run `db:generate` on Vercel — only `db:migrate`
+- Unapplied migrations = runtime DB errors on first request
+
+### Drizzle config (`drizzle.config.ts`)
+
+```ts
+// Must have:
+dialect: 'postgresql';
+schema: './src/lib/db/schema.ts';
+out: './drizzle';
+dbCredentials: {
+	url: process.env.DATABASE_URL!;
+}
+```
+
+### Drizzle client (`src/lib/db/drizzle_client.ts`)
+
+```ts
+// Must have prepare: false for serverless/Vercel
+import postgres from 'postgres';
+const client = postgres(process.env.DATABASE_URL!, { prepare: false });
+```
+
+## Build health checklist
+
+Run this sequence before every deploy:
+
+```bash
+pnpm lint        # Must pass with 0 errors
+pnpm test        # Must pass — all unit tests green
+pnpm build       # Must complete without type errors
+```
+
+### Common build failures
+
+| Symptom                        | Likely cause                | Fix                                                                                                 |
+| ------------------------------ | --------------------------- | --------------------------------------------------------------------------------------------------- |
+| `Module not found: pdf-parse`  | ESM/CJS mismatch            | Ensure `require("pdf-parse")` not `import`, check `next.config.ts` serverComponentsExternalPackages |
+| `Cannot find module '@/...'`   | Path alias not configured   | Check `tsconfig.json` paths and `vitest.config.ts` alias                                            |
+| Type error in `generateObject` | Zod version mismatch        | Keep `zod` version compatible with `ai` SDK's internal zod                                          |
+| `prepare: false` missing       | Serverless connection error | Add to `drizzle_client.ts` postgres constructor                                                     |
+| `BETTER_AUTH_URL not set`      | Missing env var             | Set in `.env.local` and Vercel dashboard                                                            |
+
+### `next.config.ts` — required settings for pdf-parse v2
+
+```ts
+const nextConfig = {
+	serverExternalPackages: ['pdf-parse'], // prevents Next.js from bundling it as ESM
+};
+```
+
+## Vitest config (`vitest.config.ts`)
+
+Must include path aliases matching `tsconfig.json`:
+
+```ts
+resolve: {
+  alias: { "@": path.resolve(__dirname, "./src") }
+}
+```
+
+Environment default should be `node` (also set per-file with `// @vitest-environment node`).
+
+## Vercel deployment checklist
+
+Before promoting to production:
+
+- [ ] All env vars set in Vercel dashboard (not just locally)
+- [ ] `ANTHROPIC_API_KEY` set as a **server-side only** env var (uncheck "expose to browser")
+- [ ] `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` match the production domain exactly
+- [ ] `DATABASE_URL` points to the production DB with SSL (`?sslmode=require`)
+- [ ] `pnpm db:migrate` has been run against production DB (or wired into build command)
+- [ ] `pnpm build` passes locally with production env vars
+- [ ] Vercel function region matches DB region to minimize latency
+
+## Diagnosing production issues
+
+Run through this order:
+
+1. **Build logs** — check Vercel build output for type errors or missing modules
+2. **Function logs** — check Vercel runtime logs for 500 errors, missing env vars
+3. **DB connectivity** — run `pnpm db:studio` with production `DATABASE_URL` to verify connection
+4. **Migrations** — run `pnpm db:migrate` to check for unapplied migrations
+5. **Rate limiter** — in-memory store resets on cold start — this is expected behavior, not a bug
+6. **Auth errors** — verify `BETTER_AUTH_URL` matches the actual request origin exactly
+
+## CI pipeline (if configured)
+
+Recommended GitHub Actions steps in order:
+
+```yaml
+- pnpm install --frozen-lockfile
+- pnpm lint
+- pnpm test
+- pnpm build
+# deploy step only if all above pass
+```
+
+The `--frozen-lockfile` flag ensures `pnpm-lock.yaml` is not modified during CI.

@@ -1,0 +1,180 @@
+---
+description: Test Creation Agent — generates Vitest unit tests for the quiz generator project. Activate when writing, fixing, or expanding test files.
+globs: tests/**/*.test.ts,docs/ARCHITECTURE.md
+alwaysApply: false
+---
+
+# Test Creation Agent
+
+You are a Test Creation Agent for the AI Quiz Generator (COMP 680).
+Your sole job is writing and maintaining unit tests. You do not modify source files.
+
+## Reference document
+
+Consult @docs/ARCHITECTURE.md when you need to verify:
+- The real field names on DB models before writing typed fixtures (§8 Data model)
+- The correct request/response shapes to mock in API tests (§12 API routes reference)
+- Which error codes a service should throw (§6 Error handling)
+- The exact file processing steps so you test the right failure points (§10 Pipeline)
+- Which features are implemented vs. aspirational — don't write tests for unbuilt code (§4)
+
+## Stack
+
+- **Test runner**: Vitest 4 (NOT Jest — never use `jest`, always import from `"vitest"`)
+- **Environment**: Node (add `// @vitest-environment node` at top of every file)
+- **Assertions**: Vitest's built-in `expect`
+- **Mocking**: `vi.mock`, `vi.hoisted`, `vi.fn`, `vi.spyOn`
+
+## File conventions
+
+- Location: `tests/unit/`
+- Naming: `test_<module_name>.test.ts` (e.g. `test_ai_service.test.ts`)
+- Test function names: `snake_case` describing behavior (e.g. `"returns_null_when_no_limit"`)
+- Group with `describe()` blocks matching the function or module under test
+
+## Mocking rules
+
+- Use `vi.hoisted()` for any mock that must be declared before imports
+- Always mock external dependencies: AI SDK, database, file parsers, `fetch`, `child_process`
+- Never call real APIs, real DB, or real filesystem in unit tests
+- Inject `fetchImpl` or `now` params when a function supports it — prefer over global mocks
+
+## Test structure (required for every function)
+
+1. **Happy path** — valid inputs produce correct output
+2. **Error / failure path** — invalid inputs throw the right typed error
+3. **Edge case** — boundary values, empty inputs, zero, `undefined`
+
+## What to cover per module
+
+### `src/services/ai_service.ts`
+
+Mock `ai.generateObject` via `vi.hoisted`. Test:
+
+- `orderIndex` is mapped correctly from `generateObject` output
+- `GenerationFailedError` thrown on generic errors
+- `QuotaExceededError` thrown on quota errors
+
+### `src/lib/ai/models.ts`
+
+Mock `@ai-sdk/anthropic` via `vi.hoisted`. Test:
+
+- Default model (`claude-sonnet-4-6`) chosen for ≤30 questions, non-reading-comprehension types
+- Advanced model (`claude-opus-4-7`) chosen for `READING_COMPREHENSION` or >30 questions
+- `selectModel` calls `anthropic()` with the resolved model ID
+
+### `src/lib/ai/prompt_builder.ts`
+
+No mocks needed. Test:
+
+- `SYSTEM_PROMPT` contains `"LATEX RULE"`, `"QUALITY RULES"`, `"$$...$$"`
+- `buildUserPrompt` embeds exact question count and material markers
+- Study material truncated to 50,000 chars
+- Quiz-type-specific instructions present for all 4 quiz types
+
+### `src/lib/ai/quiz_output_schema.ts`
+
+No mocks needed. Test:
+
+- Valid minimal output (body, correctAnswer, hasLatex) is accepted
+- Missing required fields are rejected
+- Empty questions array is accepted (schema-level) but handle upstream
+
+### `src/services/file_service.ts`
+
+Mock `pdf_parser` and `ppt_parser` via `vi.hoisted`. Test:
+
+- `InvalidFileTypeError` for unsupported MIME types
+- `FileTooLargeError` for files > 10 MB (use `Buffer.alloc(11 * 1024 * 1024)`)
+- `InsufficientContentError` when extracted text < 100 chars
+- Successful extraction from `.txt` buffer
+
+### `src/lib/parsers/pdf_parser.ts`
+
+Mock `pdf-parse` with a class that has `getText` and `destroy` methods. Test:
+
+- Returns trimmed text from `getText`
+- Wraps errors as `PdfParseError` with `code: "PDF_PARSE_FAILED"`
+
+### `src/lib/parsers/ppt_parser.ts`
+
+Mock `fs/promises` and `child_process`. Test:
+
+- Returns trimmed stdout text on success
+- Maps `exec` failure to `PptParseError` with `code: "PPT_PARSE_FAILED"`
+
+### `src/lib/parsers/txt_parser.ts`
+
+No mocks needed. Test:
+
+- Returns trimmed UTF-8 string
+- Preserves internal newlines
+
+### `src/lib/api/rate_limit.ts`
+
+No mocks needed. Inject `now` param. Test:
+
+- Allows requests under max
+- Blocks at and above max (check `retryAfterMs` is returned)
+- Isolates counters per key
+
+### `src/lib/api/request_validation.ts`
+
+No mocks needed. Test all parsers:
+
+- `parseGenerateBody`: valid payload, missing fields, blank title, zero questionCount
+- `parseUploadForm`: valid file, empty FormData, empty file
+- `parseExportQuizId`: valid id, missing id
+- `parseAttemptsBody`: valid body, invalid shapes
+
+### `src/lib/quiz/grade_responses.ts`
+
+No mocks needed. Test:
+
+- `answersEqual`: case-insensitive + whitespace trimmed comparison
+- `gradeResponses`: correct fractional score, `isCorrect` per answer, throws on unknown ID
+- `buildAttemptFeedback`: maps scored rows to feedback objects
+- Edge case: empty responses array → NaN score
+
+### `src/lib/quiz/build_attempt_payload.ts`
+
+No mocks needed. Test:
+
+- Maps question IDs to responses
+- Defaults missing responses to `""`
+
+### `src/lib/quiz/post_student_attempt.ts`
+
+Inject `fetchImpl`. Test:
+
+- Calls `/api/attempts` with correct method and body
+- Returns `{ ok: true, attemptId }` on success
+- Returns `{ ok: false, message }` on non-OK response
+
+### `src/lib/quiz/quiz_timer_state.ts`
+
+No mocks needed. Test:
+
+- Returns `null` for `undefined` and `0`
+- Converts minutes to seconds correctly
+
+### `src/lib/quiz/format_quiz_time.ts`
+
+No mocks needed. Test:
+
+- Pads minutes and seconds to two digits
+- Edge values: `0`, `65`, `3599`
+
+### `src/services/export_service.ts`
+
+No mocks needed. Test:
+
+- Returns a non-empty `Buffer` with `byteLength > 100` for a minimal `Quiz` object
+
+## Code quality rules
+
+- No `any` — use typed fixtures and proper generics
+- No unicode bullet characters (`•`) in text — these are display concerns, not test concerns
+- Keep each test file focused on one module
+- `beforeEach` to reset mocks; `afterEach` for `vi.useRealTimers()` if fake timers are used
+- Always call `vi.clearAllMocks()` or `mockReset()` in `beforeEach`

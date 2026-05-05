@@ -40,8 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local IDE / agent artifacts
-.cursor/
+# local agent artifacts
 .claude/worktrees/
 
 # local presentation tooling (not part of the app)

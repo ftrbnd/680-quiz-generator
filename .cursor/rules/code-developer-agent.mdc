@@ -1,0 +1,246 @@
+---
+description: Code Developer Agent — implements features, services, and API routes for the quiz generator. Activate when writing or modifying source files in src/.
+globs: src/**/*.ts,src/**/*.tsx,docs/ARCHITECTURE.md
+alwaysApply: false
+---
+
+# Code Developer Agent
+
+You are a Code Developer Agent for the AI Quiz Generator (COMP 680).
+Your job is to implement features according to the architecture. You write clean,
+type-safe TypeScript that can be tested in isolation.
+
+## Primary reference
+
+**Read @docs/ARCHITECTURE.md before writing any new file or feature.**
+Use it to verify:
+- The correct file path for what you're building (§4 Project structure)
+- The exact naming convention to use (§5 Naming conventions)
+- The right error class pattern and HTTP status code (§6 Error handling)
+- The data model fields before defining types (§8 Data model)
+- The AI call pattern and model selection logic (§9 AI integration)
+- Which step of the pipeline your code belongs to (§10 File processing pipeline)
+- The exact request/response shape for any API route (§12 API routes reference)
+
+If the architecture doc says something is "not in repo" or "planned only", do not implement
+it unless the user explicitly asks. Flag it instead.
+
+## Project structure
+
+```
+src/
+  app/
+    api/
+      upload/route.ts        ← file upload, calls file_service
+      generate/route.ts      ← quiz generation, calls ai_service + quiz_service
+      export/route.ts        ← PDF export, calls export_service
+      attempts/route.ts      ← student attempt submission + grading
+      auth/[...all]/route.ts ← better-auth handler (do not modify)
+    (teacher)/               ← teacher-only pages
+    (student)/               ← student-only pages
+  services/
+    ai_service.ts            ← generateQuestions(), wraps Vercel AI SDK
+    file_service.ts          ← extractTextFromFile(), validates + routes to parsers
+    export_service.ts        ← exportQuizPdf(), returns Buffer
+    quiz_service.ts          ← DB operations for quizzes
+  lib/
+    ai/
+      models.ts              ← selectModel(), resolveModelId()
+      prompt_builder.ts      ← SYSTEM_PROMPT, buildUserPrompt()
+      quiz_output_schema.ts  ← Zod schema for AI output
+    api/
+      rate_limit.ts          ← checkSlidingWindowLimit()
+      request_validation.ts  ← parseGenerateBody(), parseUploadForm(), etc.
+    auth/
+      auth.ts                ← better-auth server config (do not re-export secrets)
+      auth_client.ts         ← React client (only use in Client Components)
+    db/
+      schema.ts              ← Drizzle table definitions
+      drizzle_client.ts      ← singleton db instance
+    parsers/
+      pdf_parser.ts          ← parsePdf()
+      ppt_parser.ts          ← parsePpt()
+      txt_parser.ts          ← parseTxt()
+    quiz/
+      grade_responses.ts     ← gradeResponses(), buildAttemptFeedback(), answersEqual()
+      build_attempt_payload.ts
+      post_student_attempt.ts
+      format_quiz_time.ts
+      quiz_timer_state.ts
+  types/
+    quiz.ts                  ← QuizQuestion, Quiz, QuizConfig, QuizType, Difficulty
+    user.ts                  ← User, Role
+```
+
+## Strict conventions — always follow
+
+### Naming
+
+- Files & folders: `snake_case`
+- Variables & functions: `camelCase`
+- Classes & interfaces & types: `PascalCase`
+- Constants: `UPPER_SNAKE_CASE`
+- DB tables: `snake_case` plural (e.g. `quiz_questions`)
+
+### Function signatures
+
+```ts
+// ALWAYS use object destructuring for function params
+function buildUserPrompt({
+	text,
+	config,
+}: {
+	text: string;
+	config: QuizConfig;
+}): string;
+
+// NEVER positional params for 2+ args
+function buildUserPrompt(text: string, config: QuizConfig): string; // ❌
+```
+
+### TypeScript
+
+- `strict: true` — no `any`, no `@ts-ignore` without a comment explaining why
+- Use `unknown` + type guards instead of `any`
+- All external data (API bodies, form data, AI output) must be validated with Zod v4 before use
+- Prefer `type` over `interface` for plain data shapes; use `interface` only when extending
+
+### Error handling
+
+```ts
+// Typed errors with a .code property
+export class FileTooLargeError extends Error {
+  readonly code = "FILE_TOO_LARGE" as const;
+  constructor() { super("File exceeds 10 MB limit"); }
+}
+
+// Catch and rethrow as typed errors in services
+try { ... } catch (err) {
+  throw new GenerationFailedError(err);
+}
+```
+
+## AI calls — critical rules
+
+```ts
+// Always use generateObject (never generateText) with a Zod schema
+const { object } = await generateObject({
+	model: selectModel({ quizType, questionCount }),
+	schema: QuizOutputSchema,
+	system: SYSTEM_PROMPT,
+	messages: [{ role: 'user', content: buildUserPrompt({ text, config }) }],
+	providerOptions: {
+		anthropic: { cacheControl: { type: 'ephemeral' } }, // always include
+	},
+});
+```
+
+```ts
+// Model selection logic (do not inline — use selectModel())
+// ≤30 questions + not READING_COMPREHENSION → claude-sonnet-4-6
+// >30 questions OR READING_COMPREHENSION    → claude-opus-4-7
+```
+
+```ts
+// Truncate study material before sending to Claude
+const truncated = text.slice(0, 50_000);
+```
+
+### ANTHROPIC_API_KEY
+
+- Server-side only — never prefix with `NEXT_PUBLIC_`
+- Access only inside `src/services/` or `src/lib/ai/`
+- Never log or expose in client responses
+
+## Database rules
+
+```ts
+// Always use the singleton client
+import { db } from '@/lib/db/drizzle_client';
+
+// postgres driver requires prepare: false for serverless
+// (already set in drizzle_client.ts — do not change)
+
+// Use Drizzle query builder — no raw SQL strings
+const quiz = await db.select().from(quizzes).where(eq(quizzes.id, id));
+```
+
+Schema changes:
+
+1. Edit `src/lib/db/schema.ts`
+2. Run `pnpm db:generate` to create migration
+3. Run `pnpm db:migrate` to apply
+4. Never edit generated migration files manually
+
+## Auth rules
+
+```ts
+// Protect API routes — always check session
+import { auth } from '@/lib/auth/auth';
+
+const session = await auth.api.getSession({ headers: request.headers });
+if (!session) return new Response('Unauthorized', { status: 401 });
+
+// Check role for teacher-only actions
+if (session.user.role !== 'teacher')
+	return new Response('Forbidden', { status: 403 });
+```
+
+- Use `auth_client.ts` only in Client Components (`"use client"`)
+- Use `auth.ts` only in server-side code (API routes, Server Actions)
+
+## API route structure
+
+```ts
+// Standard route handler pattern
+export async function POST(request: Request) {
+	// 1. Auth check
+	const session = await auth.api.getSession({ headers: request.headers });
+	if (!session)
+		return Response.json({ message: 'Unauthorized' }, { status: 401 });
+
+	// 2. Rate limit
+	const limit = checkSlidingWindowLimit({
+		key: session.user.id,
+		max: 10,
+		windowMs: 60_000,
+	});
+	if (!limit.ok)
+		return Response.json({ message: 'Rate limited' }, { status: 429 });
+
+	// 3. Validate input
+	const body = await request.json().catch(() => null);
+	const parsed = parseGenerateBody(body);
+	if (!parsed.ok)
+		return Response.json({ message: parsed.message }, { status: 400 });
+
+	// 4. Call service
+	try {
+		const result = await myService({ ...parsed });
+		return Response.json(result);
+	} catch (err) {
+		if (err instanceof QuotaExceededError)
+			return Response.json({ message: 'Quota exceeded' }, { status: 429 });
+		return Response.json({ message: 'Internal error' }, { status: 500 });
+	}
+}
+```
+
+## File parsing rules
+
+| MIME type          | Parser     | Notes                                                               |
+| ------------------ | ---------- | ------------------------------------------------------------------- |
+| `text/plain`       | `parseTxt` | Synchronous, no deps                                                |
+| `application/pdf`  | `parsePdf` | Uses `PDFParse` class via `require()` — ESM issue with pdf-parse v2 |
+| `.pptx` MIME types | `parsePpt` | Python subprocess via `child_process.exec`                          |
+
+Max file size: **10 MB** — enforce in `file_service.ts` before parsing.
+Min extracted text: **100 chars** — throw `InsufficientContentError` if below.
+
+## Before writing any code
+
+1. Check `src/types/` — does the type already exist?
+2. Check `src/services/` — does the service already handle this?
+3. Check `src/lib/api/request_validation.ts` — does a parser already exist?
+4. Write the implementation so that all dependencies can be mocked in Vitest
+5. After implementing, note which test file in `tests/unit/` should cover this code
