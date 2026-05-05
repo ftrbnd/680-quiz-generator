@@ -143,13 +143,20 @@ function QuestionInput({
     return (
       <RadioGroup value={value} onValueChange={onChange} className="flex flex-col gap-3">
         {question.options.map((opt) => (
-          <div key={opt.label} className="flex items-start gap-3 rounded-lg border p-3 hover:bg-muted/40 transition-colors cursor-pointer">
-            <RadioGroupItem value={opt.label} id={`${question.id}-${opt.label}`} className="mt-0.5" />
-            <Label htmlFor={`${question.id}-${opt.label}`} className="cursor-pointer font-normal leading-relaxed">
+          <Label
+            key={opt.label}
+            className="flex w-full cursor-pointer select-text items-start gap-3 rounded-lg border p-3 font-normal leading-relaxed transition-colors hover:bg-muted/40"
+          >
+            <RadioGroupItem
+              value={opt.label}
+              id={`${question.id}-${opt.label}`}
+              className="mt-0.5 shrink-0"
+            />
+            <span className="min-w-0 flex-1">
               <span className="font-semibold">{opt.label}.</span>{" "}
               {question.hasLatex ? <LatexText text={opt.text} /> : opt.text}
-            </Label>
-          </div>
+            </span>
+          </Label>
         ))}
       </RadioGroup>
     );
