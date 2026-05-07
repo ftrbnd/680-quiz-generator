@@ -39,10 +39,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# local agent artifacts
-.claude/worktrees/
-
-# local presentation tooling (not part of the app)
-gen_pptx.js
-quiz_generator_presentation.pptx
